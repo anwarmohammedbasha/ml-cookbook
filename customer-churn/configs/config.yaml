@@ -1,0 +1,13 @@
+data:
+  raw_path: data/raw/customers.csv
+  train_path: data/processed/train.csv
+  test_path: data/processed/test.csv
+
+model:
+  n_estimators: 200
+  max_depth: 8
+  random_state: 42
+
+split:
+  test_size: 0.2
+  random_state: 42
