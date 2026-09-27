@@ -1,119 +1,190 @@
 # Customer Churn MLOps Blueprint
 
-This project builds a binary classifier for predicting whether a SaaS customer will churn. It generates reproducible synthetic customer data, trains and evaluates a Random Forest, tracks experiments and model artifacts with MLflow, versions processed data with DVC, and serves predictions over a FastAPI REST API.
+A production-structured MLOps blueprint that predicts SaaS customer churn. It generates reproducible synthetic data, trains and evaluates a Random Forest, tracks experiments and model artifacts with MLflow, versions processed data with DVC, and serves predictions over a FastAPI REST API.
 
 ## Architecture and Stack
 
 | Component | Implementation |
 | --- | --- |
-| Data preparation | pandas, NumPy, scikit-learn train/test split |
+| Data preparation | pandas, NumPy, scikit-learn `train_test_split` |
 | Model | Scikit-Learn `RandomForestClassifier` |
-| Experiment tracking | MLflow, configured for Databricks or a local SQLite tracking store |
-| Data versioning | DVC pointer files committed to Git; data stored by DVC |
+| Experiment tracking | MLflow — Databricks or local SQLite |
+| Data versioning | DVC pointer files in Git; data in DVC cache/remote |
 | Serving | FastAPI with Pydantic request validation |
 | Packaging | Docker, based on `python:3.11-slim` |
-| Automation | GitHub Actions tests pull requests and publishes the image to GHCR from `main` |
+| Automation | GitHub Actions — tests on PRs, publishes image to GHCR on `main` |
 
-The model features are `account_age`, `monthly_spend`, and `support_tickets`; the target is `churn`. The configured experiment is selected by `DATABRICKS_EXPERIMENT_PATH` and defaults to `customer-churn`.
+Model features: `account_age`, `monthly_spend`, `support_tickets`. Target: `churn`.
+
+## Project Structure
+
+```
+customer-churn/
+├── configs/
+│   └── config.yaml          # Hyperparameters and data paths
+├── src/
+│   ├── __init__.py
+│   ├── constants.py         # Shared constants (paths, column names, artifact keys)
+│   ├── utils.py             # Shared helpers: config loading, MLflow run discovery
+│   ├── data_processor.py    # Synthetic data generation and train/test splitting
+│   ├── train.py             # Model training and MLflow experiment logging
+│   ├── evaluate.py          # Offline evaluation against the test set
+│   ├── api.py               # FastAPI prediction service
+│   └── predict_remote.py    # CLI smoke-test for remote MLflow deployments
+├── tests/
+│   ├── test_data.py         # 9 tests covering data generation
+│   └── test_api.py          # 8 tests covering the prediction endpoint
+├── .env.example             # Environment variable template
+├── Dockerfile
+├── pytest.ini
+├── requirements.txt
+└── setup_data_tracking.sh
+```
 
 ## Local Setup
 
-Run commands from the `customer-churn` directory. Use Python 3.11 or later and install the project dependencies:
+Run all commands from the `customer-churn/` directory.
+
+**1. Install dependencies (Python 3.11+):**
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-Create a local environment file from the template:
+**2. Create your environment file:**
 
 ```bash
 cp .env.example .env
 ```
 
-For Databricks Community Edition, set the workspace base URL in `DATABRICKS_HOST`. Use only the scheme and host from the browser URL; do not include a path or query string. Set `MLFLOW_TRACKING_URI=databricks` and provide a workspace access token. Never commit `.env` or paste its token into logs, source control, or support messages.
+**3. Fill in `.env`:**
+
+For Databricks Community Edition:
 
 ```dotenv
 MLFLOW_TRACKING_URI=databricks
 DATABRICKS_HOST=https://<your-workspace-host>
 DATABRICKS_TOKEN=<your-workspace-access-token>
 DATABRICKS_EXPERIMENT_PATH=/Users/<your-email>/customer-churn
-
-# Optional generic MLflow REST bearer-token setting. The Databricks SDK
-# authentication used by this project reads DATABRICKS_TOKEN instead.
-MLFLOW_TRACKING_TOKEN=<your-mlflow-rest-token>
 ```
 
-`MLFLOW_TRACKING_TOKEN` is not a replacement for `DATABRICKS_TOKEN` in this project's Databricks SDK configuration. If you are using a self-hosted MLflow server with HTTP token authentication instead, follow that server's authentication configuration. The tracking URI and credentials are loaded from the environment by the training and remote-prediction scripts.
+For local tracking (no account needed — omit the Databricks variables):
+
+```dotenv
+MLFLOW_TRACKING_URI=sqlite:///mlflow.db
+DATABRICKS_EXPERIMENT_PATH=customer-churn
+```
+
+Never commit `.env` or share its token.
 
 ## Run the Pipeline
 
-Generate 1,000 synthetic records and write raw and processed CSVs:
+All scripts require `PYTHONPATH=.` (or equivalent) so the `src` package resolves correctly. The examples below use the inline `env` syntax; alternatively, `export PYTHONPATH=.` once in your shell.
+
+**Generate data:**
 
 ```bash
-python src/data_processor.py
+PYTHONPATH=. python src/data_processor.py
+# Windows: set PYTHONPATH=. && python src/data_processor.py
 ```
 
-Train on the processed training split. The script evaluates on the test split and logs hyperparameters, accuracy, precision, recall, and the model artifact to the configured MLflow experiment:
+**Train the model:**
 
 ```bash
-python src/train.py
+PYTHONPATH=. python src/train.py
 ```
 
-Download the latest completed model artifact from MLflow and print a prediction for a sample customer:
+Logs hyperparameters, accuracy, precision, recall, and the model artifact to the configured MLflow experiment.
+
+**Evaluate the latest model:**
 
 ```bash
-python src/predict_remote.py
+PYTHONPATH=. python src/evaluate.py
 ```
 
-Run the tests from the project directory:
+Loads the most recent finished run from MLflow and prints a full classification report.
+
+**Remote smoke-test (Databricks only):**
 
 ```bash
-python -m pytest -q
+PYTHONPATH=. python src/predict_remote.py
 ```
+
+**Run the tests:**
+
+```bash
+python -m pytest -v
+```
+
+`pytest.ini` sets `PYTHONPATH=.` automatically via `pythonpath = .`, so no prefix is needed for tests.
 
 ## Serve the REST API
 
-The API loads the latest completed model from the configured MLflow experiment at startup. Run training first, then launch Uvicorn with the project environment file:
+Run training first, then start the server:
 
 ```bash
-uvicorn --env-file .env src.api:app --host 0.0.0.0 --port 8000
+PYTHONPATH=. uvicorn --env-file .env src.api:app --host 0.0.0.0 --port 8000
 ```
 
-Submit a prediction request:
+**Make a prediction:**
 
 ```bash
 curl -X POST http://localhost:8000/predict \
-	-H 'Content-Type: application/json' \
-	-d '{"account_age": 12, "monthly_spend": 89.5, "support_tickets": 3}'
+  -H 'Content-Type: application/json' \
+  -d '{"account_age": 12, "monthly_spend": 89.5, "support_tickets": 3}'
 ```
 
-The response contains `churn_probability` and `churn_label`. Interactive API documentation is available at `http://localhost:8000/docs`.
+**Response:**
+
+```json
+{"churn_probability": 0.35, "churn_label": 0}
+```
+
+Interactive API docs: `http://localhost:8000/docs`
 
 ## Version Data with DVC
 
-Generate processed data first, then initialize DVC and create the pointer file:
-
 ```bash
-python src/data_processor.py
+PYTHONPATH=. python src/data_processor.py
 bash setup_data_tracking.sh
 ```
 
-The script prints the Git commands for committing DVC metadata. Configure a DVC remote before sharing data, then upload the cached dataset:
+Then commit the DVC metadata and push data to your remote:
 
 ```bash
 dvc remote add -d storage <dvc-remote-url>
 dvc push
 ```
 
-Commit the remote configuration only if it contains no credentials. Store remote credentials using DVC-supported environment variables or your team's secret manager.
-
 ## Docker and CI/CD
 
-Build and start the container from this directory:
+Build and run the container:
 
 ```bash
 docker build -t customer-churn-api .
 docker run --rm --env-file .env -p 8000:8000 customer-churn-api
 ```
 
-The Docker build generates data and trains a model inside the image. The GitHub Actions workflow runs pytest for pushes and pull requests to `main` and builds/pushes `ghcr.io/<owner>/customer-churn-api:latest` on pushes to `main`.
+The Docker build generates data and trains a model inside the image (`PYTHONPATH=/app` is set in the `ENV` layer). The GitHub Actions workflow runs pytest on every push and pull request to `main`, and builds and pushes `ghcr.io/<owner>/customer-churn-api:latest` on merges to `main`.
+
+## Configuration Reference
+
+`configs/config.yaml` controls all pipeline parameters:
+
+```yaml
+data:
+  raw_path: data/raw/customers.csv
+  train_path: data/processed/train.csv
+  test_path: data/processed/test.csv
+
+model:
+  n_estimators: 200
+  max_depth: 8
+  random_state: 42
+
+split:
+  test_size: 0.2
+  random_state: 42
+```
+
+All hyperparameters are logged to MLflow automatically on each training run.

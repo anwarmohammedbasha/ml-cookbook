@@ -62,6 +62,7 @@ Step-by-step code walkthroughs for every source file, in pipeline execution orde
 | 12 | [Testing](12-testing.md) | The test suite, `monkeypatch`, `TestClient`, and coverage gaps |
 | 13 | [Docker and Containerisation](13-docker.md) | The Dockerfile line-by-line and the baked-in model pattern |
 | 14 | [CI/CD with GitHub Actions](14-cicd.md) | The automated test and publish pipeline |
+| — | [Code Review Report](code-review.md) | Full professional code review: findings, fixes, and test results |
 
 ### 5. Deep Dives — Algorithms, Mathematics, and Internals
 

@@ -1,12 +1,18 @@
+# Runtime dependencies — required to run the pipeline and API.
 pandas
 numpy
 scikit-learn
 pyyaml
-pytest
 joblib
 fastapi
-uvicorn
+uvicorn[standard]
 mlflow
-dvc
 python-dotenv
 databricks-sdk
+
+# Data versioning
+dvc
+
+# Development / testing dependencies
+httpx2       # required by FastAPI's TestClient (httpx2 replaces httpx for starlette compatibility)
+pytest
