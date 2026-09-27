@@ -1,15 +1,18 @@
 from contextlib import asynccontextmanager
+import os
 from pathlib import Path
 
-import joblib
+import mlflow
+import mlflow.sklearn
 import pandas as pd
 from fastapi import FastAPI, Request
 from pydantic import BaseModel, Field
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-MODEL_PATH = PROJECT_ROOT / "models" / "random_forest.joblib"
 FEATURE_COLUMNS = ["account_age", "monthly_spend", "support_tickets"]
+EXPERIMENT_NAME = "customer-churn"
+MODEL_ARTIFACT_NAME = "random_forest"
 
 
 class CustomerFeatures(BaseModel):
@@ -25,7 +28,27 @@ class ChurnPrediction(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.model = joblib.load(MODEL_PATH)
+    tracking_uri = os.environ.get(
+        "MLFLOW_TRACKING_URI", f"sqlite:///{PROJECT_ROOT / 'mlflow.db'}"
+    )
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment = mlflow.get_experiment_by_name(EXPERIMENT_NAME)
+    if experiment is None:
+        raise RuntimeError(f"MLflow experiment '{EXPERIMENT_NAME}' was not found.")
+
+    runs = mlflow.search_runs(
+        experiment_ids=[experiment.experiment_id],
+        filter_string="attributes.status = 'FINISHED'",
+        order_by=["attributes.start_time DESC"],
+        max_results=1,
+    )
+    if runs.empty:
+        raise RuntimeError(f"No completed runs found for '{EXPERIMENT_NAME}'.")
+
+    run_id = runs.iloc[0]["run_id"]
+    app.state.model = mlflow.sklearn.load_model(
+        f"runs:/{run_id}/{MODEL_ARTIFACT_NAME}"
+    )
     yield
 
 

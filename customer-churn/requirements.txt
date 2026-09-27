@@ -6,3 +6,7 @@ pytest
 joblib
 fastapi
 uvicorn
+mlflow
+dvc
+python-dotenv
+databricks-sdk

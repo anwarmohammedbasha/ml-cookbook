@@ -1,4 +1,11 @@
 data/
+!customer-churn/data/
+customer-churn/data/*
+!customer-churn/data/processed.dvc
+!customer-churn/data/.gitignore
 models/
 __pycache__/
 .pytest_cache/
+mlruns/
+mlflow.db*
+.env
